@@ -7,6 +7,8 @@ view_keys=()
 addresses=()
 transactions=()
 
+#export all_proxy=
+
 # 存储文件路径
 filepath="key.txt"
 
@@ -46,7 +48,7 @@ done < $filepath
 
 for ((i=0; i<${#private_keys[@]}; i++))
 do
-    DIR="thousand_"$i
+    DIR="thousand_"${nums[$i]}
     echo "第 ${nums[$i]} 个"
     PRIVATEKEY=${private_keys[$i]}
     VIEW_KEY=${view_keys[$i]}
@@ -58,11 +60,11 @@ do
     echo $API_URL
 
     cd ~
-    mkdir $DIR && cd $DIR
+    mkdir -p $DIR && cd $DIR
 
     APPNAME=helloworld_"${WALLETADDRESS:4:6}"
-    leo new "${APPNAME}"
-    cd "${APPNAME}" && leo run && cd -
+    leo new "${APPNAME}" >/dev/null
+    cd "${APPNAME}" && leo run >/dev/null && cd -
     PATHTOAPP=$(realpath -q $APPNAME)
     cd $PATHTOAPP && cd ..
 
@@ -74,10 +76,33 @@ do
     else
         echo "jq 已经安装！"
     fi
-    res=$(curl -s $API_URL)
+    res=$(curl --connect-timeout 5 --max-time 10 -s $API_URL)
+    echo $API_URL
     value=$(echo $res | jq '.execution.transitions[0].outputs[0].value' | tr -d '"')
     echo $value
     RECORD=$(snarkos developer decrypt --ciphertext $value --view-key $VIEW_KEY)
     echo $RECORD
-    snarkos developer deploy "${APPNAME}.aleo" --private-key "${PRIVATEKEY}" --query "https://vm.aleo.org/api" --path "./${APPNAME}/build/" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 600000 --record "${RECORD}"
+
+    RESULT=$(snarkos developer deploy "${APPNAME}.aleo" --private-key "${PRIVATEKEY}" --query "https://vm.aleo.org/api" --path "./${APPNAME}/build/" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 600000 --record "${RECORD}")
+    echo $RESULT
+    while [[ $RESULT =~ "state" ]]; do
+        # your code here
+        echo "Retrying ..."
+        sleep 1 # you can adjust the sleep time here
+        RESULT=$(snarkos developer deploy "${APPNAME}.aleo" --private-key "${PRIVATEKEY}" --query "https://vm.aleo.org/api" --path "./${APPNAME}/build/" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 600000 --record "${RECORD}")
+        echo "${RESULT}"
+    done 
+
+    sleep 10
+    RESULT=$(snarkos developer execute "${APPNAME}.aleo" "main" "1u32" "2u32" --private-key "${PRIVATEKEY}" --query "https://vm.aleo.org/api" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast")
+    echo $RESULT
+    while [[ $RESULT =~ "status code" ]]; do
+        # your code here
+        echo "Retrying ..."
+        sleep 1 # you can adjust the sleep time here
+        RESULT=$(snarkos developer execute "${APPNAME}.aleo" "main" "1u32" "2u32" --private-key "${PRIVATEKEY}" --query "https://vm.aleo.org/api" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast")
+        echo "${RESULT}"
+    done 
+    echo "🍺" ${nums[$i]} $WALLETADDRESS $RESULT>> ~/ok.txt
+    sleep 10
 done
